@@ -1,33 +1,42 @@
-// backend/database.js
+// backend/database.js - VERSÃO FINAL E CORRETA PARA SQLITE
+
 const sqlite3 = require('sqlite3').verbose();
-// A MUDANÇA ESTÁ AQUI: Adicionamos 'db/' ao caminho
-const DB_SOURCE = './db/placarFLUXO.db'; 
+const path = require('path');
+const fs = require('fs');
+
+// Define o caminho para a pasta 'db' de forma segura
+const dbPath = path.resolve(__dirname, 'db');
+
+// Garante que a pasta 'db' exista antes de tentar criar o arquivo dentro dela
+if (!fs.existsSync(dbPath)) {
+    fs.mkdirSync(dbPath, { recursive: true });
+    console.log(`Pasta 'db' criada em: ${dbPath}`);
+}
+
+// Define o caminho completo para o arquivo do banco de dados
+const DB_SOURCE = path.join(dbPath, 'placarFLUXO.db');
 
 const db = new sqlite3.Database(DB_SOURCE, (err) => {
     if (err) {
-        console.error(err.message);
+        console.error("Erro ao abrir o banco de dados:", err.message);
         throw err;
     } else {
-        console.log('Conectado ao banco de dados SQLite.');
-        // O resto do seu código que cria as tabelas continua aqui...
-    }
-});
-
-module.exports = db;
-        console.log('Conectado ao banco de dados SQLite.');
+        console.log(`Conectado ao banco de dados SQLite em: ${DB_SOURCE}`);
         db.serialize(() => {
             console.log('Iniciando a criação/verificação das tabelas...');
-
+            
+            // Tabela Vendedores
             db.run(`
                 CREATE TABLE IF NOT EXISTS Vendedores (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     nome TEXT NOT NULL,
-                    tipo TEXT NOT NULL CHECK(tipo IN ('Comercial', 'Técnico')),
-                    meta_individual REAL DEFAULT 270000.00,
-                    ativo BOOLEAN DEFAULT 1
+                    tipo TEXT NOT NULL,
+                    meta_individual REAL DEFAULT 0,
+                    ativo INTEGER DEFAULT 1
                 );
             `);
-
+            
+            // Tabela Produtos
             db.run(`
                 CREATE TABLE IF NOT EXISTS Produtos (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,77 +44,70 @@ module.exports = db;
                     valor_padrao REAL DEFAULT 0.00
                 );
             `);
-
+            
+            // Tabela Clientes
+            db.run(`
+                CREATE TABLE IF NOT EXISTS Clientes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nome TEXT NOT NULL UNIQUE,
+                    estado TEXT,
+                    ativo INTEGER DEFAULT 1
+                );
+            `);
+            
+            // Tabela OrdensDeCompra
             db.run(`
                 CREATE TABLE IF NOT EXISTS OrdensDeCompra (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    vendedor_id INTEGER NOT NULL,
+                    vendedor_id INTEGER,
                     nome_cliente TEXT NOT NULL,
                     numero_oc TEXT UNIQUE,
-                    data_pedido DATE NOT NULL,
+                    data_pedido TEXT NOT NULL,
                     valor_total REAL NOT NULL,
                     valor_frete REAL DEFAULT 0.00,
                     motivo_pendencia TEXT DEFAULT 'Pagamento Pendente',
-                    status_cor TEXT DEFAULT '#ffc107', -- **NOVO: Cor padrão amarela**
-                    FOREIGN KEY (vendedor_id) REFERENCES Vendedores (id) ON DELETE CASCADE
+                    status_cor TEXT DEFAULT '#ffc107',
+                    nome_cliente_final TEXT,
+                    FOREIGN KEY (vendedor_id) REFERENCES Vendedores (id)
                 );
             `);
-
+            
+            // Tabela OrdemDeCompraItens
             db.run(`
                 CREATE TABLE IF NOT EXISTS OrdemDeCompraItens (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ordem_compra_id INTEGER NOT NULL,
+                    ordem_compra_id INTEGER,
                     nome_produto TEXT NOT NULL,
                     valor_produto REAL NOT NULL,
                     FOREIGN KEY (ordem_compra_id) REFERENCES OrdensDeCompra (id) ON DELETE CASCADE
                 );
             `);
-
-            // Tabela de Parcelas (VERSÃO ATUALIZADA COM BAIXA AUTOMÁTICA)
+            
+            // Tabela Parcelas
             db.run(`
                 CREATE TABLE IF NOT EXISTS Parcelas (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ordem_compra_id INTEGER,
-                    vendedor_id INTEGER, -- <<< COLUNA ADICIONADA
+                    vendedor_id INTEGER,
                     descricao TEXT,
                     valor REAL NOT NULL,
-                    data_vencimento DATE NOT NULL,
-                    status TEXT NOT NULL CHECK(status IN ('Pendente', 'Paga')) DEFAULT 'Pendente',
-                    data_pagamento DATE,
-                    metodo_pagamento TEXT CHECK(metodo_pagamento IN ('Boleto', 'Cartão', 'Dinheiro', 'Outro')),
-                    baixa_automatica INTEGER DEFAULT 0 CHECK(baixa_automatica IN (0, 1)), -- <<< NOVA COLUNA PARA BAIXA AUTOMÁTICA
-                    FOREIGN KEY (ordem_compra_id) REFERENCES OrdensDeCompra (id) ON DELETE SET NULL,
-                    FOREIGN KEY (vendedor_id) REFERENCES Vendedores (id) ON DELETE SET NULL -- <<< CHAVE ESTRANGEIRA ADICIONADA
+                    data_vencimento TEXT NOT NULL,
+                    status TEXT DEFAULT 'Pendente',
+                    data_pagamento TEXT,
+                    metodo_pagamento TEXT,
+                    baixa_automatica INTEGER DEFAULT 0,
+                    FOREIGN KEY (ordem_compra_id) REFERENCES OrdensDeCompra (id) ON DELETE CASCADE,
+                    FOREIGN KEY (vendedor_id) REFERENCES Vendedores (id)
                 );
-            `);
-
-            // Verificar se a coluna baixa_automatica já existe, se não, adicionar
-            db.all("PRAGMA table_info(Parcelas)", [], (err, columns) => {
+            `, (err) => {
                 if (err) {
-                    console.error('Erro ao verificar estrutura da tabela Parcelas:', err);
-                    return;
-                }
-                
-                const hasLowAutoColumn = columns.some(col => col.name === 'baixa_automatica');
-                
-                if (!hasLowAutoColumn) {
-                    console.log('Adicionando coluna baixa_automatica à tabela Parcelas...');
-                    db.run(`ALTER TABLE Parcelas ADD COLUMN baixa_automatica INTEGER DEFAULT 0 CHECK(baixa_automatica IN (0, 1))`, (err) => {
-                        if (err) {
-                            console.error('Erro ao adicionar coluna baixa_automatica:', err);
-                        } else {
-                            console.log('Coluna baixa_automatica adicionada com sucesso!');
-                        }
-                    });
+                    console.error("Erro ao criar tabela Parcelas:", err.message);
                 } else {
-                    console.log('Coluna baixa_automatica já existe na tabela Parcelas.');
+                    console.log('Tabelas criadas/verificadas com sucesso.');
                 }
             });
-
-            console.log('Tabelas criadas/verificadas com sucesso.');
         });
     }
 });
 
 module.exports = db;
-
