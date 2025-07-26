@@ -1,0 +1,19 @@
+# fly.toml file generated for painel-financeiro-backend on 2025-07-26T02:00:00-03:00
+
+app = "painel-financeiro-seleto" # << MUDE PARA UM NOME ÚNICO
+primary_region = "gru" # << Região de São Paulo, Brasil (ótima para você)
+
+[build]
+
+[http_service]
+  internal_port = 3001 # << A porta que seu app usa
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+# ESSA É A PARTE MÁGICA PARA O SQLITE
+[mounts]
+  source="sqlite_data"
+  destination="/app/db" # << Onde o disco será montado
